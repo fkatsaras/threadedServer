@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+# Executables
+server
+
 # Object files
 *.o
 *.ko
