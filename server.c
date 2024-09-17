@@ -4,12 +4,37 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#include <pthread.h>
+
 #define PORT 8080
+#define BUFFER_LEN 30000
+
+// Function to handle a single client connection
+void *handle_client(void *socket_desc) {
+
+    int new_socket = *(int*)socket_desc;
+    char buffer[BUFFER_LEN] = {0};
+
+    // Read client request
+    read(new_socket, buffer, BUFFER_LEN);
+    printf("%s\n", buffer);
+
+    // Send HTTP response
+    char *response = "HTTP/1.1 200 OK\nContent-Type: text/html\nContent-Length: 13\n\nHello, World!\n";
+    write(new_socket, response, strlen(response));
+
+    // Close connection
+    close(new_socket);
+
+    // Free the socket descriptor
+    free(socket_desc);
+    pthread_exit(NULL);    
+}
 
 int main() {
 
     // File descriptors, socket struct
-    int server_fd, new_socket;
+    int server_fd, *new_socket;
     struct sockaddr_in address;
 
     int addrlen = sizeof(address);
@@ -38,23 +63,28 @@ int main() {
 
     printf("Server listening on port %d\n", PORT);
 
-    // 4. Accept and handle incoming connection
+    // 4. Accept and handle incoming connections in new threads
     while(1) {
-        if((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-            perror("accept");
+
+        new_socket = malloc(sizeof(int));
+
+        if((*new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+            perror("Accept failed!");
+            free(new_socket); 
             exit(EXIT_FAILURE);
         }
 
-        // 5. Read client request
-        read(new_socket, buffer, 30000);
-        printf("%s\n",buffer);
+        // 5. Create a new thread for each client
+        pthread_t client_thread;
+        
+        if(pthread_create(&client_thread, NULL, handle_client, (void*)new_socket) < 0) {
+            perror("Thread creation failed!");
+            free(new_socket);
+            exit(EXIT_FAILURE);
+        }
 
-        // 6. Send HTTP response
-        char *response = "HTTP/1.1 200 OK\nContent-Type: text/html\nContent-Length: 13\n\nHello, World!\n";
-        write(new_socket, response, strlen(response));
-
-        // 7. Close connection
-        close(new_socket);
+        // Deetach the thread for clean up
+        pthread_detach(client_thread);
     }
 
     return 0; 
